@@ -1,8 +1,8 @@
 import configparser
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction, QFont
+from PyQt6.QtCore import Qt, QFileSystemWatcher
+from PyQt6.QtGui import QAction, QFont, QColor
 from PyQt6.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QFrame,
     QSizePolicy,
+    QDialog,
 )
 
 from check import get_last_valid_id
@@ -34,6 +35,26 @@ COLOR_FILE = "color.ini"
 INTERFACE_FILE = "interface.ini"
 
 
+class LogWindow(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Log")
+        self.resize(900, 500)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        self.output = QTextEdit()
+        self.output.setReadOnly(True)
+        layout.addWidget(self.output)
+
+    def append(self, text: str):
+        self.output.append(text)
+
+    def clear(self):
+        self.output.clear()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -42,6 +63,10 @@ class MainWindow(QMainWindow):
         self.translations = configparser.ConfigParser()
         self.colors = configparser.ConfigParser()
         self.interface_config = configparser.ConfigParser()
+
+        self.log_window = LogWindow(self)
+        self.file_watcher = QFileSystemWatcher(self)
+        self.file_watcher.fileChanged.connect(self.handle_file_changed)
 
         self.load_settings()
         self.load_color_config()
@@ -113,7 +138,6 @@ class MainWindow(QMainWindow):
                 "warning": "#b45309",
                 "error": "#b91c1c",
             }
-
             with open(COLOR_FILE, "w", encoding="utf-8") as file:
                 self.colors.write(file)
 
@@ -129,7 +153,6 @@ class MainWindow(QMainWindow):
                 "1600x900": "1600x900",
                 "1920x1080": "1920x1080",
             }
-
             with open(INTERFACE_FILE, "w", encoding="utf-8") as file:
                 self.interface_config.write(file)
 
@@ -166,74 +189,11 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(18, 18, 18, 18)
         root_layout.setSpacing(14)
 
-        header_frame = QFrame()
-        header_frame.setObjectName("Card")
-        header_layout = QVBoxLayout(header_frame)
-        header_layout.setContentsMargins(20, 18, 20, 18)
-        header_layout.setSpacing(8)
-
-        self.title_label = QLabel()
-        self.title_label.setObjectName("TitleLabel")
-
-        self.subtitle_label = QLabel()
-        self.subtitle_label.setObjectName("SubtitleLabel")
-        self.subtitle_label.setWordWrap(True)
-
-        header_layout.addWidget(self.title_label)
-        header_layout.addWidget(self.subtitle_label)
-
-        controls_frame = QFrame()
-        controls_frame.setObjectName("Card")
-        controls_layout = QHBoxLayout(controls_frame)
-        controls_layout.setContentsMargins(16, 14, 16, 14)
-        controls_layout.setSpacing(10)
-
-        self.add_files_button = QPushButton()
-        self.add_files_button.setObjectName("PrimaryButton")
-        self.add_files_button.clicked.connect(self.add_ini_files)
-
-        self.run_button = QPushButton()
-        self.run_button.setObjectName("PrimaryButton")
-        self.run_button.clicked.connect(self.process_files)
-
-        self.remove_selected_button = QPushButton()
-        self.remove_selected_button.setObjectName("SecondaryButton")
-        self.remove_selected_button.clicked.connect(self.remove_selected_rows)
-
-        self.clear_all_button = QPushButton()
-        self.clear_all_button.setObjectName("SecondaryButton")
-        self.clear_all_button.clicked.connect(self.clear_all_rows)
-
-        self.language_label = QLabel()
-        self.language_combo = QComboBox()
-        self.language_combo.addItems(["PT", "EN"])
-        self.language_combo.setCurrentText(self.current_language)
-        self.language_combo.currentTextChanged.connect(self.change_language)
-
-        self.window_size_label = QLabel()
-        self.window_size_combo = QComboBox()
-        self.window_size_combo.addItems(self.get_available_sizes())
-        self.window_size_combo.setCurrentText(self.current_window_size)
-        self.window_size_combo.currentTextChanged.connect(self.change_window_size)
-
-        controls_layout.addWidget(self.add_files_button)
-        controls_layout.addWidget(self.run_button)
-        controls_layout.addWidget(self.remove_selected_button)
-        controls_layout.addWidget(self.clear_all_button)
-        controls_layout.addStretch()
-        controls_layout.addWidget(self.window_size_label)
-        controls_layout.addWidget(self.window_size_combo)
-        controls_layout.addWidget(self.language_label)
-        controls_layout.addWidget(self.language_combo)
-
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(14)
-
-        left_frame = QFrame()
-        left_frame.setObjectName("Card")
-        left_layout = QVBoxLayout(left_frame)
-        left_layout.setContentsMargins(16, 16, 16, 16)
-        left_layout.setSpacing(10)
+        table_frame = QFrame()
+        table_frame.setObjectName("Card")
+        table_layout = QVBoxLayout(table_frame)
+        table_layout.setContentsMargins(16, 16, 16, 16)
+        table_layout.setSpacing(10)
 
         self.table_label = QLabel()
         self.table_label.setObjectName("SectionLabel")
@@ -256,41 +216,43 @@ class MainWindow(QMainWindow):
         self.table.itemChanged.connect(self.handle_item_changed)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        left_layout.addWidget(self.table_label)
-        left_layout.addWidget(self.table)
+        table_layout.addWidget(self.table_label)
+        table_layout.addWidget(self.table)
 
-        right_frame = QFrame()
-        right_frame.setObjectName("Card")
-        right_layout = QVBoxLayout(right_frame)
-        right_layout.setContentsMargins(16, 16, 16, 16)
-        right_layout.setSpacing(10)
+        footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.results_label = QLabel()
-        self.results_label.setObjectName("SectionLabel")
+        footer_layout.addStretch()
 
-        self.results_output = QTextEdit()
-        self.results_output.setReadOnly(True)
-        self.results_output.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.run_button = QPushButton()
+        self.run_button.setObjectName("PrimaryButton")
+        self.run_button.clicked.connect(self.process_files)
 
-        right_layout.addWidget(self.results_label)
-        right_layout.addWidget(self.results_output)
+        footer_layout.addWidget(self.run_button, 0, Qt.AlignmentFlag.AlignRight)
 
-        content_layout.addWidget(left_frame, 8)
-        content_layout.addWidget(right_frame, 4)
-
-        root_layout.addWidget(header_frame)
-        root_layout.addWidget(controls_frame)
-        root_layout.addLayout(content_layout, 1)
+        root_layout.addWidget(table_frame, 1)
+        root_layout.addLayout(footer_layout)
 
     def create_menu(self):
         menu_bar = self.menuBar()
 
         self.file_menu = menu_bar.addMenu("")
         self.language_menu = menu_bar.addMenu("")
+        self.interface_menu = menu_bar.addMenu("")
+        self.view_menu = menu_bar.addMenu("")
         self.help_menu = menu_bar.addMenu("")
 
         self.add_files_action = QAction(self)
         self.add_files_action.triggered.connect(self.add_ini_files)
+
+        self.remove_selected_action = QAction(self)
+        self.remove_selected_action.triggered.connect(self.remove_selected_rows)
+
+        self.clear_all_action = QAction(self)
+        self.clear_all_action.triggered.connect(self.clear_all_rows)
+
+        self.show_log_action = QAction(self)
+        self.show_log_action.triggered.connect(self.show_log_window)
 
         self.exit_action = QAction(self)
         self.exit_action.triggered.connect(self.close)
@@ -305,11 +267,22 @@ class MainWindow(QMainWindow):
         self.about_action.triggered.connect(self.show_about)
 
         self.file_menu.addAction(self.add_files_action)
+        self.file_menu.addAction(self.remove_selected_action)
+        self.file_menu.addAction(self.clear_all_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.exit_action)
 
         self.language_menu.addAction(self.lang_pt_action)
         self.language_menu.addAction(self.lang_en_action)
+
+        self.size_actions = []
+        for size_text in self.get_available_sizes():
+            action = QAction(size_text, self)
+            action.triggered.connect(lambda checked=False, s=size_text: self.change_window_size(s))
+            self.interface_menu.addAction(action)
+            self.size_actions.append(action)
+
+        self.view_menu.addAction(self.show_log_action)
 
         self.help_menu.addAction(self.about_action)
 
@@ -325,9 +298,6 @@ class MainWindow(QMainWindow):
         accent = self.color("accent")
         accent_hover = self.color("accent_hover")
         accent_pressed = self.color("accent_pressed")
-        button_secondary = self.color("button_secondary")
-        button_secondary_hover = self.color("button_secondary_hover")
-        button_secondary_pressed = self.color("button_secondary_pressed")
         table_header_background = self.color("table_header_background")
         table_header_text = self.color("table_header_text")
         table_grid = self.color("table_grid")
@@ -339,6 +309,10 @@ class MainWindow(QMainWindow):
 
         self.setStyleSheet(f"""
             QMainWindow {{
+                background-color: {window_background};
+            }}
+
+            QDialog {{
                 background-color: {window_background};
             }}
 
@@ -380,17 +354,6 @@ class MainWindow(QMainWindow):
                 background: transparent;
             }}
 
-            QLabel#TitleLabel {{
-                font-size: 26px;
-                font-weight: 700;
-                color: {primary_text};
-            }}
-
-            QLabel#SubtitleLabel {{
-                font-size: 12px;
-                color: {secondary_text};
-            }}
-
             QLabel#SectionLabel {{
                 font-size: 14px;
                 font-weight: 700;
@@ -400,9 +363,9 @@ class MainWindow(QMainWindow):
             QPushButton {{
                 border: none;
                 border-radius: 10px;
-                padding: 10px 16px;
+                padding: 10px 18px;
                 font-weight: 600;
-                min-height: 20px;
+                min-height: 22px;
             }}
 
             QPushButton#PrimaryButton {{
@@ -418,30 +381,12 @@ class MainWindow(QMainWindow):
                 background-color: {accent_pressed};
             }}
 
-            QPushButton#SecondaryButton {{
-                background-color: {button_secondary};
-                color: white;
-            }}
-
-            QPushButton#SecondaryButton:hover {{
-                background-color: {button_secondary_hover};
-            }}
-
-            QPushButton#SecondaryButton:pressed {{
-                background-color: {button_secondary_pressed};
-            }}
-
-            QComboBox, QTextEdit, QTableWidget {{
+            QTextEdit, QTableWidget {{
                 background-color: {input_background};
                 border: 1px solid {input_border};
                 border-radius: 10px;
                 padding: 6px;
                 color: {primary_text};
-            }}
-
-            QComboBox::drop-down {{
-                border: none;
-                width: 24px;
             }}
 
             QHeaderView::section {{
@@ -470,27 +415,14 @@ class MainWindow(QMainWindow):
                 font-family: Consolas, monospace;
                 font-size: 12px;
             }}
-
-            QScrollBar:vertical, QScrollBar:horizontal {{
-                background: transparent;
-                border: none;
-            }}
         """)
 
     def update_texts(self):
         self.setWindowTitle(self.tr("window_title"))
-        self.title_label.setText(self.tr("main_title"))
-        self.subtitle_label.setText(self.tr("main_subtitle"))
+        self.log_window.setWindowTitle(self.tr("log_window_title"))
 
-        self.add_files_button.setText(self.tr("add_files"))
         self.run_button.setText(self.tr("run_check"))
-        self.remove_selected_button.setText(self.tr("remove_selected"))
-        self.clear_all_button.setText(self.tr("clear_all"))
-        self.language_label.setText(self.tr("language"))
-        self.window_size_label.setText(self.tr("window_size"))
-
         self.table_label.setText(self.tr("files_table"))
-        self.results_label.setText(self.tr("results"))
 
         self.table.setHorizontalHeaderLabels([
             self.tr("column_ini_name"),
@@ -501,11 +433,21 @@ class MainWindow(QMainWindow):
 
         self.file_menu.setTitle(self.tr("menu_file"))
         self.language_menu.setTitle(self.tr("menu_language"))
+        self.interface_menu.setTitle(self.tr("menu_interface"))
+        self.view_menu.setTitle(self.tr("menu_view"))
         self.help_menu.setTitle(self.tr("menu_help"))
 
         self.add_files_action.setText(self.tr("add_files"))
+        self.remove_selected_action.setText(self.tr("remove_selected"))
+        self.clear_all_action.setText(self.tr("clear_all"))
+        self.show_log_action.setText(self.tr("show_log"))
         self.exit_action.setText(self.tr("exit"))
         self.about_action.setText(self.tr("about"))
+
+    def show_log_window(self):
+        self.log_window.show()
+        self.log_window.raise_()
+        self.log_window.activateWindow()
 
     def change_language(self, language_code: str):
         self.current_language = language_code
@@ -529,6 +471,11 @@ class MainWindow(QMainWindow):
     def set_saved_pipe_count(self, ini_name: str, pipe_count: int):
         self.config["IniFiles"][ini_name] = str(pipe_count)
         self.save_settings()
+
+    def add_watch_path(self, file_path: str):
+        paths = self.file_watcher.files()
+        if file_path not in paths and Path(file_path).exists():
+            self.file_watcher.addPath(file_path)
 
     def add_ini_files(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -569,6 +516,9 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, 2, folder_item)
             self.table.setItem(row, 3, result_item)
 
+            self.add_watch_path(file_path)
+            self.process_row(row, from_watcher=False)
+
     def find_row_by_path(self, file_path: str) -> int:
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 2)
@@ -601,6 +551,68 @@ class MainWindow(QMainWindow):
 
         ini_name = ini_name_item.text().strip()
         self.set_saved_pipe_count(ini_name, int(value))
+        self.process_row(item.row(), from_watcher=False)
+
+    def set_result_style(self, item: QTableWidgetItem, mode: str):
+        success_color = QColor(self.color("success"))
+        warning_color = QColor(self.color("warning"))
+        error_color = QColor(self.color("error"))
+        normal_color = QColor(self.color("primary_text"))
+
+        if mode == "success":
+            item.setForeground(success_color)
+        elif mode == "warning":
+            item.setForeground(warning_color)
+        elif mode == "error":
+            item.setForeground(error_color)
+        else:
+            item.setForeground(normal_color)
+
+    def process_row(self, row: int, from_watcher: bool = False):
+        ini_name_item = self.table.item(row, 0)
+        pipe_count_item = self.table.item(row, 1)
+        folder_item = self.table.item(row, 2)
+        result_item = self.table.item(row, 3)
+
+        if not ini_name_item or not pipe_count_item or not folder_item or not result_item:
+            return
+
+        ini_name = ini_name_item.text().strip()
+        pipe_text = pipe_count_item.text().strip()
+        file_path = folder_item.data(Qt.ItemDataRole.UserRole)
+
+        if not pipe_text.isdigit() or int(pipe_text) < 1:
+            result_item.setText(self.tr("invalid"))
+            self.set_result_style(result_item, "warning")
+            self.log_window.append(f"[{ini_name}] {self.tr('error_missing_pipe_count')}")
+            return
+
+        pipe_count = int(pipe_text)
+        self.set_saved_pipe_count(ini_name, pipe_count)
+
+        try:
+            result = get_last_valid_id(file_path, pipe_count)
+            if result is None:
+                result_item.setText(self.tr("not_found"))
+                self.set_result_style(result_item, "warning")
+                self.log_window.append(f"[{ini_name}] {self.tr('no_valid_id_found')}")
+            else:
+                result_item.setText(str(result))
+                self.set_result_style(result_item, "success")
+                if from_watcher:
+                    self.log_window.append(f"[{ini_name}] {self.tr('auto_updated')}: {result}")
+                else:
+                    self.log_window.append(f"[{ini_name}] {self.tr('last_valid_id')}: {result}")
+        except Exception as error:
+            result_item.setText(self.tr("error"))
+            self.set_result_style(result_item, "error")
+            self.log_window.append(f"[{ini_name}] {self.tr('error')}: {str(error)}")
+
+    def handle_file_changed(self, changed_path: str):
+        row = self.find_row_by_path(changed_path)
+        if row != -1:
+            self.add_watch_path(changed_path)
+            self.process_row(row, from_watcher=True)
 
     def remove_selected_rows(self):
         selected_rows = sorted(
@@ -609,59 +621,27 @@ class MainWindow(QMainWindow):
         )
 
         for row in selected_rows:
+            folder_item = self.table.item(row, 2)
+            if folder_item:
+                file_path = folder_item.data(Qt.ItemDataRole.UserRole)
+                if file_path in self.file_watcher.files():
+                    self.file_watcher.removePath(file_path)
             self.table.removeRow(row)
 
     def clear_all_rows(self):
+        for file_path in list(self.file_watcher.files()):
+            self.file_watcher.removePath(file_path)
+
         self.table.setRowCount(0)
-        self.results_output.clear()
+        self.log_window.clear()
 
     def process_files(self):
         if self.table.rowCount() == 0:
             QMessageBox.information(self, self.tr("information"), self.tr("no_files_loaded"))
             return
 
-        self.results_output.clear()
-
         for row in range(self.table.rowCount()):
-            ini_name_item = self.table.item(row, 0)
-            pipe_count_item = self.table.item(row, 1)
-            folder_item = self.table.item(row, 2)
-            result_item = self.table.item(row, 3)
-
-            if not ini_name_item or not pipe_count_item or not folder_item or not result_item:
-                continue
-
-            ini_name = ini_name_item.text().strip()
-            pipe_text = pipe_count_item.text().strip()
-            file_path = folder_item.data(Qt.ItemDataRole.UserRole)
-
-            if not pipe_text.isdigit() or int(pipe_text) < 1:
-                result_item.setText(self.tr("invalid"))
-                self.results_output.append(
-                    f"[{ini_name}] {self.tr('error_missing_pipe_count')}"
-                )
-                continue
-
-            pipe_count = int(pipe_text)
-            self.set_saved_pipe_count(ini_name, pipe_count)
-
-            try:
-                result = get_last_valid_id(file_path, pipe_count)
-                if result is None:
-                    result_item.setText(self.tr("not_found"))
-                    self.results_output.append(
-                        f"[{ini_name}] {self.tr('no_valid_id_found')}"
-                    )
-                else:
-                    result_item.setText(str(result))
-                    self.results_output.append(
-                        f"[{ini_name}] {self.tr('last_valid_id')}: {result}"
-                    )
-            except Exception as error:
-                result_item.setText(self.tr("error"))
-                self.results_output.append(
-                    f"[{ini_name}] {self.tr('error')}: {str(error)}"
-                )
+            self.process_row(row, from_watcher=False)
 
     def show_about(self):
         QMessageBox.information(
