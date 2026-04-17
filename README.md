@@ -156,5 +156,3 @@ This tool is useful for:
 ## 📄 License
 
 This project is intended for development, maintenance, and translation workflow support for Grand Fantasia private server environments.
-
-```
