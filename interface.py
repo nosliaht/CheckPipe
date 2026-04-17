@@ -142,7 +142,6 @@ class MainWindow(QMainWindow):
     def get_available_sizes(self):
         if "WindowSizes" not in self.interface_config:
             return ["1080x720"]
-
         return list(self.interface_config["WindowSizes"].values())
 
     def parse_size(self, size_text: str):
@@ -239,11 +238,12 @@ class MainWindow(QMainWindow):
         self.table_label = QLabel()
         self.table_label.setObjectName("SectionLabel")
 
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["INI Name", "Pipe Count", "File Path"])
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["INI Name", "Pipe Count", "Folder", "Last Valid ID"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -275,8 +275,8 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.results_label)
         right_layout.addWidget(self.results_output)
 
-        content_layout.addWidget(left_frame, 7)
-        content_layout.addWidget(right_frame, 5)
+        content_layout.addWidget(left_frame, 8)
+        content_layout.addWidget(right_frame, 4)
 
         root_layout.addWidget(header_frame)
         root_layout.addWidget(controls_frame)
@@ -495,7 +495,8 @@ class MainWindow(QMainWindow):
         self.table.setHorizontalHeaderLabels([
             self.tr("column_ini_name"),
             self.tr("column_pipe_count"),
-            self.tr("column_file_path"),
+            self.tr("column_folder"),
+            self.tr("column_last_valid_id"),
         ])
 
         self.file_menu.setTitle(self.tr("menu_file"))
@@ -542,6 +543,7 @@ class MainWindow(QMainWindow):
 
         for file_path in file_paths:
             ini_name = Path(file_path).name
+            folder_name = Path(file_path).parent.name
 
             if self.find_row_by_path(file_path) != -1:
                 continue
@@ -555,17 +557,22 @@ class MainWindow(QMainWindow):
             pipe_value = self.get_saved_pipe_count(ini_name)
             pipe_item = QTableWidgetItem(str(pipe_value) if pipe_value != "" else "")
 
-            path_item = QTableWidgetItem(file_path)
-            path_item.setFlags(path_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            folder_item = QTableWidgetItem(folder_name if folder_name else "-")
+            folder_item.setData(Qt.ItemDataRole.UserRole, file_path)
+            folder_item.setFlags(folder_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
+            result_item = QTableWidgetItem("-")
+            result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             self.table.setItem(row, 0, name_item)
             self.table.setItem(row, 1, pipe_item)
-            self.table.setItem(row, 2, path_item)
+            self.table.setItem(row, 2, folder_item)
+            self.table.setItem(row, 3, result_item)
 
     def find_row_by_path(self, file_path: str) -> int:
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 2)
-            if item and item.text() == file_path:
+            if item and item.data(Qt.ItemDataRole.UserRole) == file_path:
                 return row
         return -1
 
@@ -618,16 +625,18 @@ class MainWindow(QMainWindow):
         for row in range(self.table.rowCount()):
             ini_name_item = self.table.item(row, 0)
             pipe_count_item = self.table.item(row, 1)
-            file_path_item = self.table.item(row, 2)
+            folder_item = self.table.item(row, 2)
+            result_item = self.table.item(row, 3)
 
-            if not ini_name_item or not pipe_count_item or not file_path_item:
+            if not ini_name_item or not pipe_count_item or not folder_item or not result_item:
                 continue
 
             ini_name = ini_name_item.text().strip()
             pipe_text = pipe_count_item.text().strip()
-            file_path = file_path_item.text().strip()
+            file_path = folder_item.data(Qt.ItemDataRole.UserRole)
 
             if not pipe_text.isdigit() or int(pipe_text) < 1:
+                result_item.setText(self.tr("invalid"))
                 self.results_output.append(
                     f"[{ini_name}] {self.tr('error_missing_pipe_count')}"
                 )
@@ -639,14 +648,17 @@ class MainWindow(QMainWindow):
             try:
                 result = get_last_valid_id(file_path, pipe_count)
                 if result is None:
+                    result_item.setText(self.tr("not_found"))
                     self.results_output.append(
                         f"[{ini_name}] {self.tr('no_valid_id_found')}"
                     )
                 else:
+                    result_item.setText(str(result))
                     self.results_output.append(
                         f"[{ini_name}] {self.tr('last_valid_id')}: {result}"
                     )
             except Exception as error:
+                result_item.setText(self.tr("error"))
                 self.results_output.append(
                     f"[{ini_name}] {self.tr('error')}: {str(error)}"
                 )
