@@ -1,4 +1,3 @@
-````markdown
 # Grand Fantasia Translation Checker
 
 Python tool for validating Grand Fantasia translation `.ini` files, allowing real-time monitoring, rule-based verification, and fast identification of broken translation entries.
@@ -158,5 +157,4 @@ This tool is useful for:
 
 This project is intended for development, maintenance, and translation workflow support for Grand Fantasia private server environments.
 
-```
 ```
