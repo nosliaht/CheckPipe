@@ -3,12 +3,14 @@ import re
 INI_ID_RE = re.compile(r"^(\d+)\|")
 
 
-def get_last_valid_id(file_path: str, pipe_count: int):
+def analyze_ini_file(file_path: str, pipe_count: int) -> dict:
     last_valid_id = None
     current_id = None
     buffer = []
+    is_broken = False
+    error_message = ""
 
-    def close_record():
+    def validate_record():
         nonlocal last_valid_id, current_id, buffer
 
         if current_id is None:
@@ -21,21 +23,37 @@ def get_last_valid_id(file_path: str, pipe_count: int):
         last_valid_id = current_id
         return True
 
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
-        for line in file:
-            match = INI_ID_RE.match(line)
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
+            for line in file:
+                match = INI_ID_RE.match(line)
 
-            if match:
-                if not close_record():
-                    return last_valid_id
+                if match:
+                    if not validate_record():
+                        is_broken = True
+                        break
 
-                current_id = int(match.group(1))
-                buffer = [line]
+                    current_id = int(match.group(1))
+                    buffer = [line]
+                else:
+                    if current_id is not None:
+                        buffer.append(line)
+
+        if not is_broken and current_id is not None:
+            if "".join(buffer).count("|") == pipe_count:
+                last_valid_id = current_id
             else:
-                if current_id is not None:
-                    buffer.append(line)
+                is_broken = True
 
-    if current_id is not None and "".join(buffer).count("|") == pipe_count:
-        last_valid_id = current_id
+        return {
+            "last_valid_id": last_valid_id,
+            "is_broken": is_broken,
+            "error_message": error_message,
+        }
 
-    return last_valid_id
+    except Exception as error:
+        return {
+            "last_valid_id": last_valid_id,
+            "is_broken": True,
+            "error_message": str(error),
+        }

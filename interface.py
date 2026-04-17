@@ -16,14 +16,13 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QAbstractItemView,
-    QComboBox,
     QTextEdit,
     QFrame,
     QSizePolicy,
     QDialog,
 )
 
-from check import get_last_valid_id
+from check import analyze_ini_file
 
 
 SETTINGS_FILE = "settings.ini"
@@ -123,9 +122,6 @@ class MainWindow(QMainWindow):
                 "accent": "#2563eb",
                 "accent_hover": "#1d4ed8",
                 "accent_pressed": "#1e40af",
-                "button_secondary": "#64748b",
-                "button_secondary_hover": "#475569",
-                "button_secondary_pressed": "#334155",
                 "table_header_background": "#dbeafe",
                 "table_header_text": "#102a43",
                 "table_grid": "#d9e2ec",
@@ -198,12 +194,19 @@ class MainWindow(QMainWindow):
         self.table_label = QLabel()
         self.table_label.setObjectName("SectionLabel")
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["INI Name", "Pipe Count", "Folder", "Last Valid ID"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels([
+            "INI Name",
+            "Pipe Count",
+            "Folder",
+            "Last Valid ID",
+            "Status",
+        ])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -221,13 +224,11 @@ class MainWindow(QMainWindow):
 
         footer_layout = QHBoxLayout()
         footer_layout.setContentsMargins(0, 0, 0, 0)
-
         footer_layout.addStretch()
 
         self.run_button = QPushButton()
         self.run_button.setObjectName("PrimaryButton")
         self.run_button.clicked.connect(self.process_files)
-
         footer_layout.addWidget(self.run_button, 0, Qt.AlignmentFlag.AlignRight)
 
         root_layout.addWidget(table_frame, 1)
@@ -283,7 +284,6 @@ class MainWindow(QMainWindow):
             self.size_actions.append(action)
 
         self.view_menu.addAction(self.show_log_action)
-
         self.help_menu.addAction(self.about_action)
 
     def apply_styles(self):
@@ -294,7 +294,6 @@ class MainWindow(QMainWindow):
         surface_background = self.color("surface_background")
         surface_border = self.color("surface_border")
         primary_text = self.color("primary_text")
-        secondary_text = self.color("secondary_text")
         accent = self.color("accent")
         accent_hover = self.color("accent_hover")
         accent_pressed = self.color("accent_pressed")
@@ -429,6 +428,7 @@ class MainWindow(QMainWindow):
             self.tr("column_pipe_count"),
             self.tr("column_folder"),
             self.tr("column_last_valid_id"),
+            self.tr("column_status"),
         ])
 
         self.file_menu.setTitle(self.tr("menu_file"))
@@ -511,10 +511,14 @@ class MainWindow(QMainWindow):
             result_item = QTableWidgetItem("-")
             result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
+            status_item = QTableWidgetItem("-")
+            status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+
             self.table.setItem(row, 0, name_item)
             self.table.setItem(row, 1, pipe_item)
             self.table.setItem(row, 2, folder_item)
             self.table.setItem(row, 3, result_item)
+            self.table.setItem(row, 4, status_item)
 
             self.add_watch_path(file_path)
             self.process_row(row, from_watcher=False)
@@ -573,8 +577,9 @@ class MainWindow(QMainWindow):
         pipe_count_item = self.table.item(row, 1)
         folder_item = self.table.item(row, 2)
         result_item = self.table.item(row, 3)
+        status_item = self.table.item(row, 4)
 
-        if not ini_name_item or not pipe_count_item or not folder_item or not result_item:
+        if not ini_name_item or not pipe_count_item or not folder_item or not result_item or not status_item:
             return
 
         ini_name = ini_name_item.text().strip()
@@ -582,31 +587,51 @@ class MainWindow(QMainWindow):
         file_path = folder_item.data(Qt.ItemDataRole.UserRole)
 
         if not pipe_text.isdigit() or int(pipe_text) < 1:
-            result_item.setText(self.tr("invalid"))
-            self.set_result_style(result_item, "warning")
+            result_item.setText("-")
+            status_item.setText(self.tr("invalid_config"))
+            self.set_result_style(status_item, "warning")
             self.log_window.append(f"[{ini_name}] {self.tr('error_missing_pipe_count')}")
             return
 
         pipe_count = int(pipe_text)
         self.set_saved_pipe_count(ini_name, pipe_count)
 
-        try:
-            result = get_last_valid_id(file_path, pipe_count)
-            if result is None:
-                result_item.setText(self.tr("not_found"))
-                self.set_result_style(result_item, "warning")
-                self.log_window.append(f"[{ini_name}] {self.tr('no_valid_id_found')}")
-            else:
-                result_item.setText(str(result))
-                self.set_result_style(result_item, "success")
-                if from_watcher:
-                    self.log_window.append(f"[{ini_name}] {self.tr('auto_updated')}: {result}")
-                else:
-                    self.log_window.append(f"[{ini_name}] {self.tr('last_valid_id')}: {result}")
-        except Exception as error:
-            result_item.setText(self.tr("error"))
-            self.set_result_style(result_item, "error")
-            self.log_window.append(f"[{ini_name}] {self.tr('error')}: {str(error)}")
+        analysis = analyze_ini_file(file_path, pipe_count)
+
+        if analysis["error_message"]:
+            result_item.setText(
+                str(analysis["last_valid_id"]) if analysis["last_valid_id"] is not None else "-"
+            )
+            status_item.setText(self.tr("broken"))
+            self.set_result_style(status_item, "error")
+            self.log_window.append(f"[{ini_name}] {self.tr('broken_file')}: {analysis['error_message']}")
+            return
+
+        if analysis["is_broken"]:
+            result_item.setText(
+                str(analysis["last_valid_id"]) if analysis["last_valid_id"] is not None else "-"
+            )
+            status_item.setText(self.tr("broken"))
+            self.set_result_style(status_item, "error")
+            self.log_window.append(f"[{ini_name}] {self.tr('broken_file')}")
+            return
+
+        if analysis["last_valid_id"] is None:
+            result_item.setText("-")
+            status_item.setText(self.tr("not_found"))
+            self.set_result_style(status_item, "warning")
+            self.log_window.append(f"[{ini_name}] {self.tr('no_valid_id_found')}")
+            return
+
+        result_item.setText(str(analysis["last_valid_id"]))
+        status_item.setText(self.tr("ok"))
+        self.set_result_style(result_item, "success")
+        self.set_result_style(status_item, "success")
+
+        if from_watcher:
+            self.log_window.append(f"[{ini_name}] {self.tr('auto_updated')}: {analysis['last_valid_id']}")
+        else:
+            self.log_window.append(f"[{ini_name}] {self.tr('last_valid_id')}: {analysis['last_valid_id']}")
 
     def handle_file_changed(self, changed_path: str):
         row = self.find_row_by_path(changed_path)
